@@ -1,46 +1,45 @@
 pipeline {
-  agent any
+  agent {
+    docker {
+      image "maven"
+      args "-v /tmp/myapplication:/tmp/myapplication"
+    }
+  }
   stages {
-    stage('Preparing dev environment') {
+    stage('Git clone') {
+      steps {
+        checkout([$class: 'GitSCM', branches: [[name: '*/master']], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: [[credentialsId: 'gitaccess', url: 'https://github.com/shan5a6/myweb.git']]])
+      }
+    }
+
+    stage('building artifact') {
       steps {
         script {
-          def container_status = sh(script: "docker ps -a|grep -i myapplication", returnStatus: true) == 0
-          if ("${container_status}" ==  "true")
-          {
-            sh 'docker rm -f myapplication'
-          }
+          sh "mvn clean install"
+        }
+      }
+    }
+
+    stage('copying artifact') {
+      steps {
+        script {
+          if(fileExists("/tmp/myapplication/app.war")) {
           sh """
-            docker run -itd --name myapplication -p 80:8080 tomcat:8.0
-            docker stop myapplication
+            cp /tmp/myapplication/app.war /tmp/myapplication/app-${BUILD_NUMBER}.war
+            cp ${workspace}/target/myweb*.war /tmp/myapplication/app.war
+            cp ${workspace}/tomcat-users.xml /tmp/myapplication/tomcat-users.xml -f
+          """
+        }
+        else {
+          sh """
+          cp ${workspace}/target/myweb*.war /tmp/myapplication/app.war
+          cp ${workspace}/tomcat-users.xml /tmp/myapplication/tomcat-users.xml -f
           """
         }
       }
-    }
-
-    stage('Copying application war') {
-      steps {
-        script {
-          sh "docker cp /tmp/myapplication/app.war myapplication:/usr/local/tomcat/webapps"
-        }
       }
     }
 
-    stage("Copying tomcat files")
-    {
-      steps {
-        script {
-          sh "docker cp /tmp/myapplication/tomcat-users.xml myapplication:/usr/local/tomcat/conf/"
-        }
-      }
-    }
-
-    stage('Starting Application') {
-      steps {
-        script {
-          sh "docker restart myapplication"
-        }
-      }
-    }
   }
-}
+  }
 
